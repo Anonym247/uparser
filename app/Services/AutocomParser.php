@@ -74,7 +74,7 @@ class AutocomParser
     public function setProxy()
     {
         if (!config('parser.proxy_enabled')) {
-            return;
+            return false;
         }
 
         $key = array_rand($this->proxies);
@@ -88,6 +88,8 @@ class AutocomParser
         } else {
             $this->setProxy();
         }
+
+        return $this->proxy;
     }
 
     public function freshTables()
@@ -540,6 +542,7 @@ class AutocomParser
         curl_setopt($channel, CURLOPT_POSTFIELDS, json_encode($body));
         curl_setopt($channel, CURLOPT_POST, true);
         curl_setopt($channel, CURLOPT_HTTPHEADER, $this->headers);
+        curl_setopt($channel, CURLOPT_PROXY, $this->setProxy());
 
         return $channel;
     }
@@ -597,7 +600,7 @@ class AutocomParser
 
     private function __proxyChecker($proxy)
     {
-        $ch = curl_init("https://google.com");
+        $ch = curl_init("http://google.com");
 
         curl_setopt($ch, CURLOPT_TIMEOUT, 1);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);

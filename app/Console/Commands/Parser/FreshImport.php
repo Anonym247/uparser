@@ -48,6 +48,8 @@ class FreshImport extends Command
 
         if (!$this->parser->checkRanges()) {
             $this->error('Table vehicle_ranges is not empty!');
+
+            return;
         }
 
         $this->parser->checkPriceRanges();

@@ -9,5 +9,5 @@ return [
     'page' => 1,
     'threads' => 10,
     'threshold' => 10000,
-    'proxy_enabled' => false,
+    'proxy_enabled' => true,
 ];
