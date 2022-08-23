@@ -4,6 +4,7 @@ namespace App\Console\Commands\Parser;
 
 use App\Services\AutocomParser;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class FreshImport extends Command
 {
@@ -43,18 +44,26 @@ class FreshImport extends Command
      */
     public function handle(): void
     {
-        $tree = $this->makeBinaryTreeOfRanges($this->parser->getYearMin(), $this->parser->getYearMax());
-        $this->parser->setRangesTree($tree);
+        try {
+            $tree = $this->makeBinaryTreeOfRanges($this->parser->getYearMin(), $this->parser->getYearMax());
+            $this->parser->setRangesTree($tree);
 
-        if (!$this->parser->checkRanges()) {
-            $this->error('Table vehicle_ranges is not empty!');
+            if (!$this->parser->checkRanges()) {
+                $this->error('Table vehicle_ranges is not empty!');
 
-            return;
+                return;
+            }
+
+            $this->parser->checkPriceRanges();
+            $this->parser->freshTables();
+            $this->parser->fetchAllFromRanges();
+        } catch (\Exception $exception) {
+            Log::error($exception->getMessage(), [
+                'file' => $exception->getFile(),
+                'line' => $exception->getLine(),
+                'trace' => $exception->getTrace(),
+            ]);
         }
-
-        $this->parser->checkPriceRanges();
-        $this->parser->freshTables();
-        $this->parser->fetchAllFromRanges();
     }
 
     private function makeBinaryTreeOfRanges(int $left, int $right): array
