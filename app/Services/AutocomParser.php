@@ -298,6 +298,7 @@ class AutocomParser
         $ranges = VehicleRange::query()
             ->where('count', '!=', 0)
             ->where('count', '!=', config('parser.threshold'))
+            ->where('is_completed', '=', 0)
             ->get();
 
         foreach ($ranges as $range) {

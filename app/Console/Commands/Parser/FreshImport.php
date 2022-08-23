@@ -45,17 +45,20 @@ class FreshImport extends Command
     public function handle(): void
     {
         try {
+            $hasRanges = false;
             $tree = $this->makeBinaryTreeOfRanges($this->parser->getYearMin(), $this->parser->getYearMax());
             $this->parser->setRangesTree($tree);
 
             if (!$this->parser->checkRanges()) {
-                $this->error('Table vehicle_ranges is not empty!');
-
-                return;
+                $hasRanges = true;
+                $this->info('Table vehicle_ranges is not empty! Updating!');
             }
 
-            $this->parser->checkPriceRanges();
-            $this->parser->freshTables();
+            if (!$hasRanges) {
+                $this->parser->checkPriceRanges();
+                $this->parser->freshTables();
+            }
+
             $this->parser->fetchAllFromRanges();
         } catch (\Exception $exception) {
             Log::error($exception->getMessage(), [
