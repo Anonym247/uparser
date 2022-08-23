@@ -315,6 +315,8 @@ class AutocomParser
                 'fetched_pages' => count($pagesArray),
                 'empty_entries' => $noEntries
             ]);
+
+            echo 'Year: ' . $range->year_min . '; Price Min: ' . $range->price_min . '; Price Max: ' . $range->price_max;
         }
     }
 
