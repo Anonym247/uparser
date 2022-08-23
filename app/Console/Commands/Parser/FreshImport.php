@@ -44,6 +44,8 @@ class FreshImport extends Command
      */
     public function handle(): void
     {
+        ini_set('max_execution_time', 0);
+
         try {
             $hasRanges = false;
             $tree = $this->makeBinaryTreeOfRanges($this->parser->getYearMin(), $this->parser->getYearMax());
