@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class AutocomParser
 {
@@ -50,7 +51,7 @@ class AutocomParser
     {
         $this->headers = [
             'Content-Type: application/json',
-            'x-api-key: ' . env('X_API_KEY'),
+            'x-api-key: ' . config('parser.key'),
         ];
 
         $this->filter = [
@@ -62,7 +63,7 @@ class AutocomParser
             'yearMin' => config('parser.year_min'),
         ];
 
-        $this->url = env('GRAPHQL_URL');
+        $this->url = config('parser.url');
 
         $this->threads = config('parser.threads', 1);
 
@@ -106,6 +107,68 @@ class AutocomParser
         Schema::enableForeignKeyConstraints();
     }
 
+    public function multiCurlWithRecursiveRangeV2($params, $parentId)
+    {
+        $dividedParams = $this->getParamsWithPriceRange($params);
+
+        $multiHandler = curl_multi_init();
+
+        $leftParams = [
+            'year_min' => $params['year_min'],
+            'year_max' => $params['year_max'],
+            'price_min' => $dividedParams['lefts']['price_min'],
+            'price_max' => $dividedParams['lefts']['price_max'],
+        ];
+
+        $rightParams = [
+            'year_min' => $params['year_min'],
+            'year_max' => $params['year_max'],
+            'price_min' => $dividedParams['rights']['price_min'],
+            'price_max' => $dividedParams['rights']['price_max'],
+        ];
+
+        $ch1 = $this->initializeCurlWithParams($leftParams);
+        $ch2 = $this->initializeCurlWithParams($rightParams);
+
+        curl_multi_add_handle($multiHandler, $ch1);
+        curl_multi_add_handle($multiHandler, $ch2);
+
+        $running = null;
+
+        do {
+            curl_multi_exec($multiHandler, $running);
+        } while ($running);
+
+        curl_multi_remove_handle($multiHandler, $ch1);
+        curl_multi_remove_handle($multiHandler, $ch2);
+
+        curl_multi_close($multiHandler);
+
+        $response_1 = curl_multi_getcontent($ch1);
+        $response_2 = curl_multi_getcontent($ch2);
+
+        $response_1 = json_decode($response_1, true);
+        $response_2 = json_decode($response_2, true);
+
+        $leftParams['count'] = $this->parseCountResponse($response_1);
+        $rightParams['count'] = $this->parseCountResponse($response_2);
+
+        $leftParamsSaving = $this->saveRangeResult($leftParams, $parentId);
+        $rightParamsSaving = $this->saveRangeResult($rightParams, $parentId);
+        $leftParentId = $leftParamsSaving->getKey();
+        $rightParentId = $rightParamsSaving->getKey();
+
+        if ($leftParams['count'] >= 10000) {
+            $this->multiCurlWithRecursiveRangeV2($leftParams, $leftParentId);
+        }
+
+        if ($rightParams['count'] >= 10000) {
+            $this->multiCurlWithRecursiveRangeV2($rightParams, $rightParentId);
+        }
+
+        return [];
+    }
+
     public function checkPriceRanges(): void
     {
         $ranges = VehicleRange::query()
@@ -118,21 +181,11 @@ class AutocomParser
             'price_max' => $this->filter['listPriceMax'],
         ];
 
-        $priceRanges = $params;
-
         foreach ($ranges as $range) {
-            while (true) {
-                $priceRange = $this->getParamsWithPriceRange($params);
-                $priceRange['lefts']['value'] = $range->year_min;
-                $priceRange['rights']['value'] = $range->year_max;
+            $params['year_min'] = $range->year_min;
+            $params['year_max'] = $range->year_max;
 
-                $params = $this->multiCurlWithRecursiveRange($priceRange['lefts'], $priceRange['rights'], $range->id, true);
-
-                if ($params === false) {
-                    $params = $priceRanges;
-                    break;
-                }
-            }
+            $params = $this->multiCurlWithRecursiveRangeV2($params, $range->id);
         }
     }
 
@@ -144,10 +197,7 @@ class AutocomParser
             return false;
         }
 
-        $lefts = $this->rangesTree['left'];
-        $rights = $this->rangesTree['right'];
-
-        $this->multiCurlWithRecursiveRange($lefts, $rights);
+        $this->multiCurlWithRecursiveRange($this->rangesTree, $this->rangesTree);
 
         return true;
     }
@@ -166,30 +216,39 @@ class AutocomParser
         return $this;
     }
 
-    public function setPriceMax(int $priceMax): AutocomParser
+    public function setPriceMax(?int $priceMax): AutocomParser
     {
         $this->filter['listPriceMax'] = $priceMax;
 
         return $this;
     }
 
-    public function setPriceMin(int $priceMin): AutocomParser
+    public function setPriceMin(?int $priceMin): AutocomParser
     {
         $this->filter['listPriceMin'] = $priceMin;
 
         return $this;
     }
 
-    public function setYearMax(int $yearMax): AutocomParser
+    public function setYearMax(?int $yearMax): AutocomParser
     {
         $this->filter['yearMax'] = $yearMax;
 
         return $this;
     }
 
-    public function setYearMin(int $yearMin): AutocomParser
+    public function setYearMin(?int $yearMin): AutocomParser
     {
         $this->filter['yearMin'] = $yearMin;
+
+        return $this;
+    }
+
+    public function setSort(?string $sort = null): AutocomParser
+    {
+        if ($sort) {
+            $this->filter['sort'] = $sort;
+        }
 
         return $this;
     }
@@ -229,7 +288,7 @@ class AutocomParser
 
     private function getQueryForData(): string
     {
-        return 'query ($filter: SearchFilterInput!) {listingSearch(filter: $filter) {totalPages totalEntries pageNumber pageSize entries {inventory {vin inventoryDisplay {id drivetrainDescription awardSlug virtualAppointments cabType adDescription financingEligible seatCount imageUrls dealerVehicleUrl make bodyStyle certifiedPreOwned cylinderCount priceDropInCents priceBadge stockNumber stockType vehicleHistoryUrl doorCount providedFeatures modelYear videoUrls engineDescription homeDelivery exteriorColor milesFromDealer fuelType sellerType interiorColor mileage spinProvider spinUrl listPrice model msrp oneOwner trim features {seating}} dealer {name customerId address {streetAddress1 city state zipCode} phones {phoneType areaCode localNumber}} vin} id priceBadge predictedPrice listedAt}}}';
+        return 'query ($filter: SearchFilterInput!) {listingSearch(filter: $filter) {totalPages totalEntries pageNumber pageSize entries {inventory {vin inventoryDisplay {id drivetrainDescription transmissionDescription awardSlug virtualAppointments cabType adDescription financingEligible seatCount imageUrls dealerVehicleUrl make bodyStyle certifiedPreOwned cylinderCount priceDropInCents priceBadge stockNumber stockType vehicleHistoryUrl doorCount providedFeatures modelYear videoUrls engineDescription homeDelivery exteriorColor milesFromDealer fuelType sellerType interiorColor mileage spinProvider spinUrl listPrice model msrp oneOwner trim features {seating}} dealer {name customerId address {streetAddress1 city state zipCode} phones {phoneType areaCode localNumber}} vin} id priceBadge predictedPrice listedAt}}}';
     }
 
     public function fetchAllFromRanges(): void
@@ -261,11 +320,13 @@ class AutocomParser
 
     private function updateParams(array $paramsArray)
     {
-        if (!Param::query()->count()) {
+        $currentParams = Param::query()->get()->pluck('name')->toArray();
+
+        if (!Param::query()->whereNotIn('name', $paramsArray)->count()) {
             $params = [];
 
             foreach ($paramsArray as $item) {
-                if (!in_array($item, ['id', 'imageUrls'])) {
+                if (!in_array($item, ['id', 'imageUrls']) && !in_array($item, $currentParams)) {
                     $params[] = ['name' => $item, 'created_at' => now()->toDateTimeString()];
                 }
             }
@@ -280,20 +341,36 @@ class AutocomParser
     {
         $vehicle = Vehicle::where('vehicle_id', $entry['id'])->first();
 
-        if ($vehicle) {
-            return $vehicle;
+        if (!$vehicle) {
+            $vehicle = new Vehicle();
         }
 
-        $vehicle = new Vehicle([
+        $vehicle->fill([
             'vehicle_id' => $entry['id'],
             'seller_id' => $seller->getKey(),
             'vin' => $entry['inventory']['vin'],
-            'url' => $entry['inventory']['inventoryDisplay']['dealerVehicleUrl'],
+            'url' => $this->makeVehicleOriginUrl($entry),
             'add_date' => $entry['listedAt'],
         ]);
+
         $vehicle->save();
 
         return $vehicle;
+    }
+
+    private function makeVehicleOriginUrl($entry): string
+    {
+        $maker =  Str::slug($entry['inventory']['inventoryDisplay']['make'] ?? null);
+        $model =  Str::slug($entry['inventory']['inventoryDisplay']['model'] ?? null);
+        $modelYear =  Str::slug($entry['inventory']['inventoryDisplay']['modelYear'] ?? null);
+        $trim =  Str::slug($entry['inventory']['inventoryDisplay']['trim'] ?? null);
+        $vin = Str::slug($entry['inventory']['vin'] ?? null);
+        $id = $entry['id'];
+
+        $uri = (!$maker ?: ($maker . '-')) . ( !$model ?: ($model . '-')) . (!$modelYear ?: ($modelYear . '-'))
+            . (!$trim ?: ($trim . '-')) . (!$vin ?: $vin) . '?listingId=' . $id;
+
+        return config('parser.origin_url') . '/' . $uri;
     }
 
     private function saveVehicleImages(array $items, Vehicle $vehicle)
@@ -311,24 +388,77 @@ class AutocomParser
         VehicleImage::query()->insert($images);
     }
 
-    private function saveVehicleParams(array $items, Vehicle $vehicle)
+    private function saveVehicleParams(array $items, Vehicle $vehicle, bool $softUpdate = false)
     {
         $vehicleParams = [];
 
         foreach ($this->params as $param) {
+            $currentVehicleParams = ParamValue::query()->where('vehicle_id', $vehicle->getKey())->get();
+
             if (array_key_exists($param->name, $items)) {
                 $value = is_array($items[$param->name]) ? json_encode($items[$param->name]) : $items[$param->name];
 
-                $vehicleParams[] = [
-                    'vehicle_id' => $vehicle->getKey(),
-                    'param_id' => $param->id,
-                    'data' => $value,
-                    'created_at' => now()->toDateTimeString()
-                ];
+                if ($softUpdate) {
+                    $newParam = is_array($items[$param->name]) ? json_encode($items[$param->name]) : $items[$param->name];
+                    $updatedParams = $currentVehicleParams
+                        ->where('param_id', $param->id)
+                        ->where('data', '!=', $newParam);
+
+                    if (count($updatedParams)) {
+                        ParamValue::query()
+                            ->where('vehicle_id', $vehicle->getKey())
+                            ->whereIn('param_id', $updatedParams->pluck('param_id')->toArray())
+                            ->delete();
+
+                        $vehicleParams[] = [
+                            'vehicle_id' => $vehicle->getKey(),
+                            'param_id' => $param->id,
+                            'data' => $value,
+                            'created_at' => now()->toDateTimeString()
+                        ];
+                    }
+                } else {
+                    $vehicleParams[] = [
+                        'vehicle_id' => $vehicle->getKey(),
+                        'param_id' => $param->id,
+                        'data' => $value,
+                        'created_at' => now()->toDateTimeString()
+                    ];
+                }
             }
         }
 
         ParamValue::query()->insert($vehicleParams);
+    }
+
+    private function parseForUpdate(array $pages): int
+    {
+        $paramsUpdated = false;
+
+        foreach ($pages as $page) {
+            $entries = $page['data']['listingSearch']['entries'] ?? [];
+
+            if (!$paramsUpdated) {
+
+                $paramsArray = array_keys($entries[0]['inventory']['inventoryDisplay']);
+                $this->updateParams($paramsArray);
+
+                $paramsUpdated = true;
+            }
+
+            foreach ($entries as $entry) {
+                $seller = $this->firstOrCreateSeller($entry['inventory']['dealer']);
+
+                $vehicle = $this->saveVehicle($entry, $seller);
+
+                $this->saveVehicleImages($entry['inventory']['inventoryDisplay']['imageUrls'] ?? [], $vehicle);
+
+                $this->saveVehicleParams($entry['inventory']['inventoryDisplay'], $vehicle, !$vehicle->wasRecentlyCreated);
+            }
+
+        }
+
+        return 1;
     }
 
     private function parse(array $pages): int
@@ -336,15 +466,16 @@ class AutocomParser
         $noEntries = 0;
 
         foreach ($pages as $page) {
-            $entries = $page['data']['listingSearch']['entries'] ?? null;
+            $entries = $page['data']['listingSearch']['entries'] ?? [];
 
-            if (!$entries) {
+            if (!count($entries)) {
                 $noEntries++;
                 continue;
             }
 
             //DB::transaction(function () use ($entries) {
             $paramsArray = array_keys($entries[0]['inventory']['inventoryDisplay']);
+            dd($paramsArray);
             $this->updateParams($paramsArray);
 
             foreach ($entries as $entry) {
@@ -379,21 +510,20 @@ class AutocomParser
                 'address' => $dealer['address']['streetAddress1'],
                 'zip_code' => $dealer['address']['zipCode'],
             ]);
+
             $seller->save();
 
-            $contacts = [];
-
             foreach ($dealer['phones'] as $phone) {
-                $contacts[] = [
-                    'seller_id' => $seller->getKey(),
-                    'area_code' => $phone['areaCode'],
-                    'local_number' => $phone['localNumber'],
-                    'phone_type' => $phone['phoneType'],
-                    'created_at' => now()->toDateTimeString(),
-                ];
+                SellerContact::query()->updateOrCreate(
+                    [
+                        'seller_id' => $seller->getKey(),
+                        'area_code' => $phone['areaCode'],
+                        'local_number' => $phone['localNumber'],
+                        'phone_type' => $phone['phoneType'],
+                    ],
+                    $phone
+                );
             }
-
-            SellerContact::query()->insert($contacts);
         }
 
         return $seller;
@@ -413,12 +543,18 @@ class AutocomParser
             }
             $this->setPage($fromPage++);
 
-            $channels[$i] = $this->initializeCurlWithParams([
+            $params = [
                 'year_min' => $range['year_min'],
                 'year_max' => $range['year_max'],
                 'price_min' => $range['price_min'],
                 'price_max' => $range['price_max'],
-            ], false);
+            ];
+
+            if (isset($range['sort'])) {
+                $params['sort'] = $range['sort'];
+            }
+
+            $channels[$i] = $this->initializeCurlWithParams($params, false);
 
             curl_multi_add_handle($multiHandler, $channels[$i]);
         }
@@ -444,7 +580,7 @@ class AutocomParser
         return $responses;
     }
 
-    private function multiCurlWithRecursiveRange(array $lefts, array $rights, int $parentId = null, $priceRangeFilter = false)
+    private function multiCurlWithRecursiveRange(array $lefts, array $rights, int $parentId = null)
     {
         $multiHandler = curl_multi_init();
 
@@ -500,16 +636,6 @@ class AutocomParser
             $rightParentId = $rightParamsSaving->getKey();
         }
 
-        if ($priceRangeFilter) {
-            if ($leftParams['count'] >= 10000) {
-                return $leftParams;
-            } else if ($rightParams['count'] >= 10000) {
-                return $rightParams;
-            } else {
-                return false;
-            }
-        }
-
         if ($leftParams['count'] >= 10000 && $newRecord ) {
             $this->multiCurlWithRecursiveRange($lefts['left'] ?? $lefts, $lefts['right'] ?? $lefts, $leftParentId);
         }
@@ -527,6 +653,7 @@ class AutocomParser
         $this->setYearMin($params['year_min']);
         $this->setPriceMax($params['price_max']);
         $this->setPriceMin($params['price_min']);
+        $this->setSort($params['sort'] ?? null);
 
         $body = [
             'variables' => [
@@ -612,5 +739,25 @@ class AutocomParser
         curl_close($ch);
 
         return $handle;
+    }
+
+    public function fetchNewestCars()
+    {
+        $pages = (int)ceil(config('parser.threshold') / config('parser.page_size'));
+        $pagesArray = [];
+
+        $range = [
+            'year_min' => null,
+            'year_max' => null,
+            'price_min' => null,
+            'price_max' => null,
+            'sort' => 'LISTED_AT_DESC'
+        ];
+
+        for ($i = 1; $i <= $pages; $i += $this->threads) {
+            $pagesArray = array_merge($this->multiCurlFetch($range, $i, $pages), $pagesArray);
+
+            $this->parseForUpdate($pagesArray);
+        }
     }
 }
