@@ -475,7 +475,6 @@ class AutocomParser
 
             //DB::transaction(function () use ($entries) {
             $paramsArray = array_keys($entries[0]['inventory']['inventoryDisplay']);
-            dd($paramsArray);
             $this->updateParams($paramsArray);
 
             foreach ($entries as $entry) {
