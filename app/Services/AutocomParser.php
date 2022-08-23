@@ -176,16 +176,16 @@ class AutocomParser
             ->where('count', '>=', config('parser.threshold'))
             ->get();
 
-        $params = [
-            'price_min' => $this->filter['listPriceMin'],
-            'price_max' => $this->filter['listPriceMax'],
-        ];
-
         foreach ($ranges as $range) {
+            $params = [
+                'price_min' => $this->filter['listPriceMin'],
+                'price_max' => $this->filter['listPriceMax'],
+            ];
+
             $params['year_min'] = $range->year_min;
             $params['year_max'] = $range->year_max;
 
-            $params = $this->multiCurlWithRecursiveRangeV2($params, $range->id);
+            $this->multiCurlWithRecursiveRangeV2($params, $range->id);
         }
     }
 
