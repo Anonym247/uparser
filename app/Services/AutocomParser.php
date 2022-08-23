@@ -178,8 +178,8 @@ class AutocomParser
 
         foreach ($ranges as $range) {
             $params = [
-                'price_min' => $this->filter['listPriceMin'],
-                'price_max' => $this->filter['listPriceMax'],
+                'price_min' => config('parser.price_min'),
+                'price_max' => config('parser.price_max'),
             ];
 
             $params['year_min'] = $range->year_min;
