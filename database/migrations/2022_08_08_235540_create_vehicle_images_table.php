@@ -15,11 +15,11 @@ class CreateVehicleImagesTable extends Migration
     {
         Schema::create('vehicle_images', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('vehicle_id');
+            $table->uuid('vehicle_id');
             $table->string('url', 512)->charset('ascii')->collation('ascii_general_ci')->nullable();
             $table->timestamps();
 
-            $table->foreign('vehicle_id')->references('id')->on('vehicles');
+            $table->foreign('vehicle_id')->references('vehicle_id')->on('vehicles');
         });
     }
 

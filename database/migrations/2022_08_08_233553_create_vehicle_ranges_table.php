@@ -25,6 +25,8 @@ class CreateVehicleRangesTable extends Migration
             $table->unsignedSmallInteger('fetched_pages')->default(0);
             $table->unsignedSmallInteger('empty_entries')->default(0);
             $table->timestamps();
+
+            $table->foreign('parent_id')->references('id')->on('vehicle_ranges');
         });
     }
 
