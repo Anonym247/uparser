@@ -492,7 +492,7 @@ class AutocomParser
             ];
         }
 
-        DB::table('seller_contacts')->upsert($sellerContacts, ['seller_id'], ['area_code', 'local_number', 'phone_type']);
+        DB::table('seller_contacts')->upsert($sellerContacts, ['seller_id', 'area_code', 'local_number', 'phone_type']);
 
         return $seller->getKey();
     }
