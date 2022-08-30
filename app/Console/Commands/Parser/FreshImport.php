@@ -51,7 +51,7 @@ class FreshImport extends Command
 
             if (!$this->parser->checkRanges()) {
                 $hasRanges = true;
-                $this->info('Table vehicle_ranges is not empty! Updating!');
+                $this->info('Table vehicle_ranges is not empty! Update or continue!');
             }
 
             if (!$hasRanges) {

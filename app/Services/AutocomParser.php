@@ -71,7 +71,7 @@ class AutocomParser
     public function setProxy()
     {
         if (!config('parser.proxy_enabled')) {
-            return false;
+            //return false;
         }
 
         $key = array_rand($this->proxies);
@@ -367,7 +367,7 @@ class AutocomParser
 
         foreach ($items as $item) {
             $images[] = [
-                'vehicle_id' => $vehicleId,
+                //'vehicle_id' => $vehicleId,
                 'url' => $item,
                 'created_at' => now()->toDateTimeString(),
             ];
@@ -386,7 +386,7 @@ class AutocomParser
                 if (!is_null($items[$param->name])) {
                     $vehicleParams[] = [
                         'param_id' => $param->id,
-                        'vehicle_id' => $vehicleId,
+                        //'vehicle_id' => $vehicleId,
                         'data' => is_array($items[$param->name]) ? json_encode($items[$param->name]) : $items[$param->name]
                     ];
                 }
@@ -426,12 +426,14 @@ class AutocomParser
         return 1;
     }
 
-    private function parse(array $pages)
+    private function parse(array $pages): array
     {
         foreach ($pages as $page) {
             $vehicles = [];
             $vehicleImages = [];
             $vehicleParams = [];
+            $images = [];
+            $params = [];
 
             $entries = $page['data']['listingSearch']['entries'] ?? [];
 
@@ -449,16 +451,36 @@ class AutocomParser
                 $this->params = Param::all();
             }
 
+            $uuids = [];
+
             foreach ($entries as $entry) {
+                $uuids[] = $entry['id'];
                 $sellerId = $this->firstOrCreateSeller($entry['inventory']['dealer']);
 
                 $vehicles[] = $this->parseVehicle($entry, $sellerId);
-                $images = $this->parseVehicleImages($entry['inventory']['inventoryDisplay']['imageUrls'] ?? [], $entry['id']);
-                $vehicleImages = array_merge($vehicleImages, $images);
-                $vehicleParams = array_merge($vehicleParams, $this->parseVehicleParams($entry['inventory']['inventoryDisplay'], $entry['id']));
+                $images[$entry['id']] = $this->parseVehicleImages($entry['inventory']['inventoryDisplay']['imageUrls'] ?? [], $entry['id']);
+                $params[$entry['id']] = $this->parseVehicleParams($entry['inventory']['inventoryDisplay'], $entry['id']);
             }
 
             DB::table('vehicles')->upsert($vehicles, ['vehicle_id']);
+
+            $vehicleIds = DB::table('vehicles')->whereIn('vehicle_id', $uuids)->get(['id', 'vehicle_id']);
+
+            foreach ($vehicleIds as $vehicle) {
+                if (isset($images[$vehicle->vehicle_id])) {
+                    foreach ($images[$vehicle->vehicle_id] as &$vehicleImage) {
+                        $vehicleImage['vehicle_id'] = $vehicle->id;
+                        $vehicleImages[] = $vehicleImage;
+                    }
+                }
+
+                if (isset($params[$vehicle->vehicle_id])) {
+                    foreach ($params[$vehicle->vehicle_id] as &$vehicleParam) {
+                        $vehicleParam['vehicle_id'] = $vehicle->id;
+                        $vehicleParams[] = $vehicleParam;
+                    }
+                }
+            }
             DB::table('vehicle_images')->upsert($vehicleImages, ['vehicle_id']);
             DB::table('param_values')->upsert($vehicleParams, ['param_id', 'vehicle_id', 'data'], ['updated_at' => now()]);
         }
@@ -492,7 +514,7 @@ class AutocomParser
             ];
         }
 
-        DB::table('seller_contacts')->upsert($sellerContacts, ['seller_id', 'area_code', 'local_number', 'phone_type']);
+        DB::table('seller_contacts')->insertOrIgnore($sellerContacts);
 
         return $seller->getKey();
     }

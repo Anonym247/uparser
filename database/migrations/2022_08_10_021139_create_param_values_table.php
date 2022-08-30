@@ -15,12 +15,12 @@ class CreateParamValuesTable extends Migration
     {
         Schema::create('param_values', function (Blueprint $table) {
             $table->id();
-            $table->uuid('vehicle_id');
+            $table->unsignedBigInteger('vehicle_id');
             $table->unsignedBigInteger('param_id');
             $table->text('data')->nullable();
             $table->timestamps();
 
-            $table->foreign('vehicle_id')->references('vehicle_id')->on('vehicles');
+            $table->foreign('vehicle_id')->references('id')->on('vehicles');
             $table->foreign('param_id')->references('id')->on('params');
 
             //$table->unique(['vehicle_id', 'param_id', 'data']); // TODO: mysql error
