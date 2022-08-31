@@ -63,8 +63,6 @@ class AutocomParser
         $this->threads = config('parser.threads', 1);
 
         $this->proxies = json_decode(file_get_contents(public_path('proxies.json')), true);
-
-        $this->setProxy();
     }
 
     public function setProxy()
@@ -531,6 +529,11 @@ class AutocomParser
 
         $channels = [];
 
+        $proxy = $this->setProxy();
+
+        echo "proxy: " . $proxy;
+        echo "\n\n\n";
+
         for ($i = 0; $i < $this->threads; $i++) {
             if ($fromPage > $total) {
                 break;
@@ -548,7 +551,7 @@ class AutocomParser
                 $params['sort'] = $range['sort'];
             }
 
-            $channels[$i] = $this->initializeCurlWithParams($params, false);
+            $channels[$i] = $this->initializeCurlWithParams($params, false, $proxy);
 
             curl_multi_add_handle($multiHandler, $channels[$i]);
         }
@@ -649,7 +652,7 @@ class AutocomParser
         return 1;
     }
 
-    private function initializeCurlWithParams(array $params, bool $isRangeQuery = true)
+    private function initializeCurlWithParams(array $params, bool $isRangeQuery = true, string $proxy = null)
     {
         $this->setYearMax($params['year_max']);
         $this->setYearMin($params['year_min']);
@@ -671,7 +674,7 @@ class AutocomParser
         curl_setopt($channel, CURLOPT_POSTFIELDS, json_encode($body));
         curl_setopt($channel, CURLOPT_POST, true);
         curl_setopt($channel, CURLOPT_HTTPHEADER, $this->headers);
-        curl_setopt($channel, CURLOPT_PROXY, $this->setProxy());
+        curl_setopt($channel, CURLOPT_PROXY, $proxy ?: $this->setProxy());
 
         return $channel;
     }

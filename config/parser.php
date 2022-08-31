@@ -10,7 +10,7 @@ return [
     'price_max' => 500000000,
     'page_size' => 250,
     'page' => 1,
-    'threads' => 30,
+    'threads' => 20,
     'threshold' => 10000,
     'proxy_enabled' => true,
 ];
