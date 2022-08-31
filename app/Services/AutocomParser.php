@@ -554,11 +554,20 @@ class AutocomParser
         }
 
        if (count($channels)) {
-           $running = null;
+           $active = null;
 
            do {
-               curl_multi_exec($multiHandler, $running);
-           } while ($running);
+               $mrc = curl_multi_exec($multiHandler, $active);
+           } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+           while ($active && $mrc == CURLM_OK) {
+               if (curl_multi_select($multiHandler) == -1) {
+                   usleep(1);
+               }
+               do {
+                   $mrc = curl_multi_exec($multiHandler, $active);
+               } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+           }
 
            for ($i = 0; $i < count($channels); $i++) {
                curl_multi_remove_handle($multiHandler, $channels[$i]);
