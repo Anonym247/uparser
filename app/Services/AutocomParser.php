@@ -120,8 +120,12 @@ class AutocomParser
             'price_max' => $dividedParams['rights']['price_max'],
         ];
 
-        $ch1 = $this->initializeCurlWithParams($leftParams);
-        $ch2 = $this->initializeCurlWithParams($rightParams);
+        $proxy = $this->setProxy();
+
+        echo "Pproxy: " . $proxy . "\n";
+
+        $ch1 = $this->initializeCurlWithParams($leftParams, true, $proxy);
+        $ch2 = $this->initializeCurlWithParams($rightParams, true, $proxy);
 
         curl_multi_add_handle($multiHandler, $ch1);
         curl_multi_add_handle($multiHandler, $ch2);
@@ -172,12 +176,12 @@ class AutocomParser
 
     public function checkPriceRanges(): void
     {
-        echo "starting price ranges:....";
-
         $ranges = VehicleRange::query()
             ->whereRaw('year_min = year_max')
             ->where('count', '>=', config('parser.threshold'))
             ->get();
+
+        echo "starting price ranges: Count - " . count($ranges) . "\n";
 
         foreach ($ranges as $range) {
             $params = [
@@ -190,6 +194,8 @@ class AutocomParser
 
             $this->multiCurlWithRecursiveRangeV2($params, $range->id);
         }
+
+        echo "Finished price ranges...\n";
     }
 
     public function checkRanges(): bool
@@ -200,7 +206,11 @@ class AutocomParser
             return false;
         }
 
+        echo "Starting year range tree....\n";
+
         $this->multiCurlWithRecursiveRange($this->rangesTree, $this->rangesTree);
+
+        echo "Finished year range tree....\n";
 
         return true;
     }
@@ -304,6 +314,8 @@ class AutocomParser
             ->where('is_completed', '=', 0)
             ->get();
 
+        echo "Ranges list: total - " . count($ranges) . " found \n";
+
         $this->params = Param::all();
 
         foreach ($ranges as $range) {
@@ -320,6 +332,8 @@ class AutocomParser
                 'is_completed' => true,
                 'fetched_pages' => count($pagesArray),
             ]);
+
+            echo "Range finished: " . $range->id . "\n";
         }
     }
 
@@ -526,20 +540,18 @@ class AutocomParser
     private function multiCurlFetch($range, $fromPage, $total): array
     {
         $responses = [];
+        $channels = [];
+        $proxy = $this->setProxy();
 
         $multiHandler = curl_multi_init();
 
-        $channels = [];
-
-        $proxy = $this->setProxy();
-
-        echo "proxy: " . $proxy;
-        echo "\n\n\n";
+        echo "proxy: " . $proxy . "\n";
 
         for ($i = 0; $i < $this->threads; $i++) {
             if ($fromPage > $total) {
                 break;
             }
+
             $this->setPage($fromPage++);
 
             $params = [
@@ -554,37 +566,31 @@ class AutocomParser
             }
 
             $channels[$i] = $this->initializeCurlWithParams($params, false, $proxy);
+            curl_multi_add_handle($multiHandler, $channels[$i]);
         }
 
-        foreach ($channels as $channel) {
-            curl_multi_add_handle($multiHandler, $channel);
+        if (count($channels)) {
+            do {
+                $mrc = curl_multi_exec($multiHandler, $active);
+            } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+            while ($active && $mrc === CURLM_OK) {
+                if (curl_multi_select($multiHandler) != -1) {
+                    do {
+                        $mrc = curl_multi_exec($multiHandler, $active);
+                    } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+                    if ($multiHandlerInfo = curl_multi_info_read($multiHandler)) {
+                        $responses[] = json_decode(curl_multi_getcontent($multiHandlerInfo['handle']), true);
+
+                        curl_multi_remove_handle($multiHandler, $multiHandlerInfo['handle']);
+                        curl_close($multiHandlerInfo['handle']);
+                    }
+                }
+            }
         }
 
-       if (count($channels)) {
-           $active = null;
-           do {
-               $mrc = curl_multi_exec($multiHandler, $active);
-           } while ($mrc == CURLM_CALL_MULTI_PERFORM);
-
-           while ($active && $mrc == CURLM_OK) {
-               if (curl_multi_select($multiHandler) == -1) {
-                   usleep(1);
-               }
-               do {
-                   $mrc = curl_multi_exec($multiHandler, $active);
-               } while ($mrc == CURLM_CALL_MULTI_PERFORM);
-           }
-
-           for ($i = 0; $i < count($channels); $i++) {
-               curl_multi_remove_handle($multiHandler, $channels[$i]);
-           }
-
-           curl_multi_close($multiHandler);
-
-           for ($i = 0; $i < count($channels); $i++) {
-               $responses[] = json_decode(curl_multi_getcontent($channels[$i]), true);
-           }
-       }
+        curl_multi_close($multiHandler);
 
         return $responses;
     }
@@ -607,8 +613,12 @@ class AutocomParser
             'price_max' => $rights['price_max'] ?? $this->filter['listPriceMax'],
         ];
 
-        $ch1 = $this->initializeCurlWithParams($leftParams);
-        $ch2 = $this->initializeCurlWithParams($rightParams);
+        $proxy = $this->setProxy();
+
+        echo "Proxy: " . $proxy . "\n";
+
+        $ch1 = $this->initializeCurlWithParams($leftParams, true, $proxy);
+        $ch2 = $this->initializeCurlWithParams($rightParams, true, $proxy);
 
         curl_multi_add_handle($multiHandler, $ch1);
         curl_multi_add_handle($multiHandler, $ch2);
