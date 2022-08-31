@@ -19,7 +19,6 @@ class CreateSellerContactsTable extends Migration
             $table->unsignedSmallInteger('area_code');
             $table->string('local_number');
             $table->string('phone_type')->nullable();
-            $table->timestamps();
 
             $table->foreign('seller_id')->references('id')->on('sellers');
             $table->unique(['seller_id', 'area_code', 'local_number']);

@@ -16,14 +16,12 @@ class CreateParamValuesTable extends Migration
         Schema::create('param_values', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('vehicle_id');
-            $table->unsignedBigInteger('param_id');
-            $table->text('data')->nullable();
-            $table->timestamps();
+            $table->unsignedSmallInteger('param_id');
+            $table->string('data', 765);
 
             $table->foreign('vehicle_id')->references('id')->on('vehicles');
             $table->foreign('param_id')->references('id')->on('params');
-
-            //$table->unique(['vehicle_id', 'param_id', 'data']); // TODO: mysql error
+            $table->unique(['vehicle_id', 'param_id', 'data']);
         });
     }
 

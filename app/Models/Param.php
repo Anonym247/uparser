@@ -7,4 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 class Param extends Model
 {
     protected $guarded = ['id'];
+
+    public $timestamps = false;
 }

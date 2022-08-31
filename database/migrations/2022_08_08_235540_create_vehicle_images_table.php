@@ -17,9 +17,9 @@ class CreateVehicleImagesTable extends Migration
             $table->id();
             $table->unsignedBigInteger('vehicle_id');
             $table->string('url', 512)->charset('ascii')->collation('ascii_general_ci')->nullable();
-            $table->timestamps();
 
             $table->foreign('vehicle_id')->references('id')->on('vehicles');
+            $table->unique(['vehicle_id', 'url']);
         });
     }
 

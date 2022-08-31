@@ -7,4 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 class SellerContact extends Model
 {
     protected $guarded = ['id'];
+
+    public $timestamps = false;
 }

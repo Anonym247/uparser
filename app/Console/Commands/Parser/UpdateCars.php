@@ -39,8 +39,6 @@ class UpdateCars extends Command
 
     public function handle()
     {
-        ini_set('memory_limit', -1);
-
         $this->parser->fetchNewestCars();
     }
 }

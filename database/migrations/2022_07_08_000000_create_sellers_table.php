@@ -14,14 +14,12 @@ class CreateSellersTable extends Migration
     public function up()
     {
         Schema::create('sellers', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('customer_id')->unique();
+            $table->unsignedBigInteger('id')->primary();
             $table->string('name');
             $table->string('city');
             $table->string('state');
             $table->string('address');
             $table->string('zip_code');
-            $table->timestamps();
         });
     }
 

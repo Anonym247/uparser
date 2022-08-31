@@ -20,7 +20,6 @@ class CreateVehiclesTable extends Migration
             $table->string('vin');
             $table->string('url', 512)->charset('ascii')->collation('ascii_general_ci')->nullable();
             $table->timestamp('add_date')->nullable();
-            $table->timestamps();
 
             $table->foreign('seller_id')->references('id')->on('sellers');
         });

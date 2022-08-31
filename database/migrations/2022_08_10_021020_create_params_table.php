@@ -14,9 +14,8 @@ class CreateParamsTable extends Migration
     public function up()
     {
         Schema::create('params', function (Blueprint $table) {
-            $table->id();
+            $table->smallIncrements('id');
             $table->string('name');
-            $table->timestamps();
         });
     }
 

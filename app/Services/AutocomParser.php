@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Param;
-use App\Models\Seller;
 use App\Models\VehicleRange;
 use Illuminate\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
@@ -71,7 +70,7 @@ class AutocomParser
     public function setProxy()
     {
         if (!config('parser.proxy_enabled')) {
-            //return false;
+            return false;
         }
 
         $key = array_rand($this->proxies);
@@ -316,25 +315,6 @@ class AutocomParser
         }
     }
 
-    private function updateParams(array $paramsArray)
-    {
-        $currentParams = Param::query()->get()->pluck('name')->toArray();
-
-        if (!Param::query()->whereNotIn('name', $paramsArray)->count()) {
-            $params = [];
-
-            foreach ($paramsArray as $item) {
-                if (!in_array($item, ['id', 'imageUrls']) && !in_array($item, $currentParams)) {
-                    $params[] = ['name' => $item, 'created_at' => now()->toDateTimeString()];
-                }
-            }
-
-            DB::table('params')->insert($params);
-        }
-
-        $this->params = Param::query()->get();
-    }
-
     private function parseVehicle($entry, $sellerId): array
     {
         return [
@@ -361,74 +341,87 @@ class AutocomParser
         return config('parser.origin_url') . '/' . $uri;
     }
 
-    private function parseVehicleImages(array $items, $vehicleId): array
+    private function parseVehicleImages(array $items): array
     {
         $images = [];
 
         foreach ($items as $item) {
             $images[] = [
-                //'vehicle_id' => $vehicleId,
                 'url' => $item,
-                'created_at' => now()->toDateTimeString(),
             ];
         }
 
         return $images;
     }
 
-    private function parseVehicleParams(array $items, $vehicleId): array
+    private function parseVehicleParams(array $items): array
     {
         $vehicleParams = [];
 
         foreach ($this->params as $param) {
-
-            if (array_key_exists($param->name, $items)) {
-                if (!is_null($items[$param->name])) {
-                    $vehicleParams[] = [
-                        'param_id' => $param->id,
-                        //'vehicle_id' => $vehicleId,
-                        'data' => is_array($items[$param->name]) ? json_encode($items[$param->name]) : $items[$param->name]
-                    ];
-                }
+            if ($items[$param->name] ?? false) {
+                $vehicleParams[] = [
+                    'param_id' => $param->id,
+                    'data' => is_array($items[$param->name]) ? json_encode($items[$param->name]) : $items[$param->name],
+                ];
             }
         }
 
         return $vehicleParams;
     }
 
-    private function parseForUpdate(array $pages): int
+    private function parseForUpdate(array $pages): void
     {
-        $paramsUpdated = false;
-
         foreach ($pages as $page) {
+            $uuids = [];
+            $vehicles = [];
+            $vehicleParams = [];
+            $params = [];
+
             $entries = $page['data']['listingSearch']['entries'] ?? [];
 
-            if (!$paramsUpdated) {
-
+            if (!count($this->params)) {
                 $paramsArray = array_keys($entries[0]['inventory']['inventoryDisplay']);
-                $this->updateParams($paramsArray);
+                $insertParamArray = [];
 
-                $paramsUpdated = true;
+                foreach ($paramsArray as $param) {
+                    $insertParamArray[] = [
+                        'name' => $param
+                    ];
+                }
+
+                DB::table('params')->insertOrIgnore($insertParamArray);
+                $this->params = Param::all();
             }
 
             foreach ($entries as $entry) {
-                $seller = $this->firstOrCreateSeller($entry['inventory']['dealer']);
-
-                $vehicle = $this->saveVehicle($entry, $seller);
-
-                $this->saveVehicleImages($entry['inventory']['inventoryDisplay']['imageUrls'] ?? [], $vehicle);
-
-                $this->saveVehicleParams($entry['inventory']['inventoryDisplay'], $vehicle, !$vehicle->wasRecentlyCreated);
+                $uuids[] = $entry['id'];
+                $vehicles[] = $this->parseVehicle($entry, $entry['inventory']['dealer']['customerId']);
+                $params[$entry['id']] = $this->parseVehicleParams($entry['inventory']['inventoryDisplay']);
             }
 
-        }
+            DB::table('vehicles')->insertOrIgnore($vehicles);
+            $vehicleIds = DB::table('vehicles')->whereIn('vehicle_id', $uuids)->get(['id', 'vehicle_id']);
 
-        return 1;
+            foreach ($vehicleIds as $vehicle) {
+                if (isset($params[$vehicle->vehicle_id])) {
+                    foreach ($params[$vehicle->vehicle_id] as &$vehicleParam) {
+                        $vehicleParam['vehicle_id'] = $vehicle->id;
+                        $vehicleParams[] = $vehicleParam;
+                    }
+                }
+            }
+
+            DB::table('param_values')->insertOrIgnore($vehicleParams);
+        }
     }
 
-    private function parse(array $pages): array
+    private function parse(array $pages): void
     {
         foreach ($pages as $page) {
+            $uuids = [];
+            $sellers = [];
+            $sellerContacts = [];
             $vehicles = [];
             $vehicleImages = [];
             $vehicleParams = [];
@@ -451,18 +444,25 @@ class AutocomParser
                 $this->params = Param::all();
             }
 
-            $uuids = [];
-
             foreach ($entries as $entry) {
-                $uuids[] = $entry['id'];
-                $sellerId = $this->firstOrCreateSeller($entry['inventory']['dealer']);
+                $uuids[] = $vehicleId = $entry['id'];
+                $sellers[] = $this->parseSeller($entry['inventory']['dealer']);
+                $sellerContacts = array_merge($sellerContacts, $this->parseSellerContacts($entry['inventory']['dealer']));
 
-                $vehicles[] = $this->parseVehicle($entry, $sellerId);
-                $images[$entry['id']] = $this->parseVehicleImages($entry['inventory']['inventoryDisplay']['imageUrls'] ?? [], $entry['id']);
-                $params[$entry['id']] = $this->parseVehicleParams($entry['inventory']['inventoryDisplay'], $entry['id']);
+                $vehicles[] = $this->parseVehicle($entry, $entry['inventory']['dealer']['customerId']);
+
+                $images[$vehicleId] = array_map(function ($value) use ($vehicleId) {
+                    return [
+                        'url' => $value
+                    ];
+                }, $entry['inventory']['inventoryDisplay']['imageUrls'] ?? []);
+
+                $params[$vehicleId] = $this->parseVehicleParams($entry['inventory']['inventoryDisplay']);
             }
 
-            DB::table('vehicles')->upsert($vehicles, ['vehicle_id']);
+            DB::table('sellers')->insertOrIgnore($sellers);
+            DB::table('seller_contacts')->insertOrIgnore($sellerContacts);
+            DB::table('vehicles')->insertOrIgnore($vehicles);
 
             $vehicleIds = DB::table('vehicles')->whereIn('vehicle_id', $uuids)->get(['id', 'vehicle_id']);
 
@@ -481,42 +481,38 @@ class AutocomParser
                     }
                 }
             }
-            DB::table('vehicle_images')->upsert($vehicleImages, ['vehicle_id']);
-            DB::table('param_values')->upsert($vehicleParams, ['param_id', 'vehicle_id', 'data'], ['updated_at' => now()]);
-        }
 
-        return [];
+            DB::table('vehicle_images')->insertOrIgnore($vehicleImages);
+            DB::table('param_values')->insertOrIgnore($vehicleParams);
+        }
     }
 
-    private function firstOrCreateSeller(array $dealer)
+    private function parseSeller(array $dealer): array
+    {
+        return [
+            'id' => $dealer['customerId'],
+            'name' => $dealer['name'],
+            'city' => $dealer['address']['city'],
+            'state' => $dealer['address']['state'],
+            'address' => $dealer['address']['streetAddress1'],
+            'zip_code' => $dealer['address']['zipCode'],
+        ];
+    }
+
+    private function parseSellerContacts(array $dealer): array
     {
         $sellerContacts = [];
 
-        $seller = Seller::query()->updateOrCreate(
-            [
-                'customer_id' => $dealer['customerId']
-            ],
-            [
-                'name' => $dealer['name'],
-                'city' => $dealer['address']['city'],
-                'state' => $dealer['address']['state'],
-                'address' => $dealer['address']['streetAddress1'],
-                'zip_code' => $dealer['address']['zipCode'],
-            ]
-        );
-
         foreach ($dealer['phones'] as $phone) {
             $sellerContacts[] = [
-                'seller_id' => $seller->getKey(),
+                'seller_id' => $dealer['customerId'],
                 'area_code' => $phone['areaCode'],
                 'local_number' => $phone['localNumber'],
                 'phone_type' => $phone['phoneType'],
             ];
         }
 
-        DB::table('seller_contacts')->insertOrIgnore($sellerContacts);
-
-        return $seller->getKey();
+        return $sellerContacts;
     }
 
     private function multiCurlFetch($range, $fromPage, $total): array
