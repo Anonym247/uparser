@@ -172,6 +172,8 @@ class AutocomParser
 
     public function checkPriceRanges(): void
     {
+        echo "starting price ranges:....";
+
         $ranges = VehicleRange::query()
             ->whereRaw('year_min = year_max')
             ->where('count', '>=', config('parser.threshold'))
@@ -552,16 +554,26 @@ class AutocomParser
             }
 
             $channels[$i] = $this->initializeCurlWithParams($params, false, $proxy);
+        }
 
-            curl_multi_add_handle($multiHandler, $channels[$i]);
+        foreach ($channels as $channel) {
+            curl_multi_add_handle($multiHandler, $channel);
         }
 
        if (count($channels)) {
-           $running = null;
-
+           $active = null;
            do {
-               curl_multi_exec($multiHandler, $running);
-           } while ($running);
+               $mrc = curl_multi_exec($multiHandler, $active);
+           } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+           while ($active && $mrc == CURLM_OK) {
+               if (curl_multi_select($multiHandler) == -1) {
+                   usleep(1);
+               }
+               do {
+                   $mrc = curl_multi_exec($multiHandler, $active);
+               } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+           }
 
            for ($i = 0; $i < count($channels); $i++) {
                curl_multi_remove_handle($multiHandler, $channels[$i]);
