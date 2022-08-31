@@ -63,8 +63,6 @@ class AutocomParser
         $this->threads = config('parser.threads', 1);
 
         $this->proxies = json_decode(file_get_contents(public_path('proxies.json')), true);
-
-        $this->setProxy();
     }
 
     public function setProxy()
