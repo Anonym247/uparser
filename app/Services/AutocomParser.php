@@ -415,9 +415,6 @@ class AutocomParser
 
     private function parse(array $pages): void
     {
-        $vehicleImages = [];
-        $vehicleParams = [];
-
         foreach ($pages as $page) {
             $uuids = [];
             $vehicles = [];
@@ -425,6 +422,8 @@ class AutocomParser
             $sellerContacts = [];
             $images = [];
             $params = [];
+            $vehicleImages = [];
+            $vehicleParams = [];
 
             $entries = $page['data']['listingSearch']['entries'] ?? [];
 
@@ -479,10 +478,10 @@ class AutocomParser
                     }
                 }
             }
-        }
 
-        DB::table('vehicle_images')->insertOrIgnore($vehicleImages);
-        DB::table('param_values')->insertOrIgnore($vehicleParams);
+            DB::table('vehicle_images')->insertOrIgnore($vehicleImages);
+            DB::table('param_values')->insertOrIgnore($vehicleParams);
+        }
     }
 
     private function parseSeller(array $dealer): array
