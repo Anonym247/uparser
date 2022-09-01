@@ -745,7 +745,6 @@ class AutocomParser
     public function fetchNewestCars()
     {
         $pages = (int)ceil(config('parser.threshold') / config('parser.page_size'));
-        $pagesArray = [];
 
         $range = [
             'year_min' => null,
