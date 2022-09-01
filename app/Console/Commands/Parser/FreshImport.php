@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Parser;
 
 use App\Services\AutocomParser;
+use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -60,7 +61,7 @@ class FreshImport extends Command
             }
 
             $this->parser->fetchAllFromRanges();
-        } catch (\Exception $exception) {
+        } catch (Exception $exception) {
             Log::error($exception->getMessage(), [
                 'file' => $exception->getFile(),
                 'line' => $exception->getLine(),

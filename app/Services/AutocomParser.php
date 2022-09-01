@@ -100,7 +100,7 @@ class AutocomParser
         Schema::enableForeignKeyConstraints();
     }
 
-    public function multiCurlWithRecursiveRangeV2($params, $parentId)
+    public function multiCurlWithRecursiveRangeV2($params, $parentId): void
     {
         $dividedParams = $this->getParamsWithPriceRange($params);
 
@@ -170,8 +170,6 @@ class AutocomParser
         if ($rightParams['count'] >= 10000) {
             $this->multiCurlWithRecursiveRangeV2($rightParams, $rightParentId);
         }
-
-        return [];
     }
 
     public function checkPriceRanges(): void
@@ -276,16 +274,6 @@ class AutocomParser
         return $this->filter['yearMax'];
     }
 
-    public function getPriceMin()
-    {
-        return $this->filter['listPriceMin'];
-    }
-
-    public function getPriceMax()
-    {
-        return $this->filter['listPriceMax'];
-    }
-
     private function getQueryForRanges(): string
     {
         return 'query ($filter: SearchFilterInput!) {listingSearch(filter: $filter) {totalPages totalEntries pageNumber pageSize}}';
@@ -352,8 +340,8 @@ class AutocomParser
     {
         $maker =  Str::slug($entry['inventory']['inventoryDisplay']['make'] ?? null);
         $model =  Str::slug($entry['inventory']['inventoryDisplay']['model'] ?? null);
-        $modelYear =  Str::slug($entry['inventory']['inventoryDisplay']['modelYear'] ?? null);
-        $trim =  Str::slug($entry['inventory']['inventoryDisplay']['trim'] ?? null);
+        $modelYear = Str::slug($entry['inventory']['inventoryDisplay']['modelYear'] ?? null);
+        $trim = Str::slug($entry['inventory']['inventoryDisplay']['trim'] ?? null);
         $vin = Str::slug($entry['inventory']['vin'] ?? null);
         $id = $entry['id'];
 
@@ -361,19 +349,6 @@ class AutocomParser
             . (!$trim ?: ($trim . '-')) . (!$vin ?: $vin) . '?listingId=' . $id;
 
         return config('parser.origin_url') . '/' . $uri;
-    }
-
-    private function parseVehicleImages(array $items): array
-    {
-        $images = [];
-
-        foreach ($items as $item) {
-            $images[] = [
-                'url' => $item,
-            ];
-        }
-
-        return $images;
     }
 
     private function parseVehicleParams(array $items): array
@@ -440,13 +415,14 @@ class AutocomParser
 
     private function parse(array $pages): void
     {
+        $vehicleImages = [];
+        $vehicleParams = [];
+
         foreach ($pages as $page) {
             $uuids = [];
+            $vehicles = [];
             $sellers = [];
             $sellerContacts = [];
-            $vehicles = [];
-            $vehicleImages = [];
-            $vehicleParams = [];
             $images = [];
             $params = [];
 
@@ -503,10 +479,10 @@ class AutocomParser
                     }
                 }
             }
-
-            DB::table('vehicle_images')->insertOrIgnore($vehicleImages);
-            DB::table('param_values')->insertOrIgnore($vehicleParams);
         }
+
+        DB::table('vehicle_images')->insertOrIgnore($vehicleImages);
+        DB::table('param_values')->insertOrIgnore($vehicleParams);
     }
 
     private function parseSeller(array $dealer): array
@@ -595,7 +571,7 @@ class AutocomParser
         return $responses;
     }
 
-    private function multiCurlWithRecursiveRange(array $lefts, array $rights, int $parentId = null)
+    private function multiCurlWithRecursiveRange(array $lefts, array $rights, int $parentId = null): void
     {
         $multiHandler = curl_multi_init();
 
@@ -670,8 +646,6 @@ class AutocomParser
         if ($rightParams['count'] >= 10000 && $newRecord) {
             $this->multiCurlWithRecursiveRange($rights['left'] ?? $rights, $rights['right'] ?? $rights, $rightParentId);
         }
-
-        return 1;
     }
 
     private function initializeCurlWithParams(array $params, bool $isRangeQuery = true, string $proxy = null)
@@ -782,7 +756,7 @@ class AutocomParser
         ];
 
         for ($i = 1; $i <= $pages; $i += $this->threads) {
-            $pagesArray = array_merge($this->multiCurlFetch($range, $i, $pages), $pagesArray);
+            $pagesArray = $this->multiCurlFetch($range, $i, $pages);
 
             $this->parseForUpdate($pagesArray);
         }
