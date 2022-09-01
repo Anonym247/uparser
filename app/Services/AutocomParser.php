@@ -300,6 +300,7 @@ class AutocomParser
             ->where('count', '!=', 0)
             ->where('count', '!=', config('parser.threshold'))
             ->where('is_completed', '=', 0)
+            ->orderBy('count', 'desc')
             ->get();
 
         echo "Ranges list: total - " . count($ranges) . " found \n";
